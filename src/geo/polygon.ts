@@ -127,6 +127,50 @@ function clipEdge(
   return out.length >= 6 ? out : [];
 }
 
+/**
+ * Clips a polyline to an axis-aligned rectangle (Liang–Barsky per segment). A line that leaves and
+ * re-enters the rectangle yields several pieces.
+ */
+export function clipPolylineToRect(line: Flat, r: Rect): Flat[] {
+  const pieces: Flat[] = [];
+  let cur: Flat | null = null;
+  for (let i = 0; i + 3 < line.length; i += 2) {
+    const x0 = line[i];
+    const z0 = line[i + 1];
+    const dx = line[i + 2] - x0;
+    const dz = line[i + 3] - z0;
+    let t0 = 0;
+    let t1 = 1;
+    const p = [-dx, dx, -dz, dz];
+    const q = [x0 - r.minX, r.maxX - x0, z0 - r.minZ, r.maxZ - z0];
+    let visible = true;
+    for (let k = 0; k < 4; k++) {
+      if (p[k] === 0) {
+        if (q[k] < 0) visible = false;
+      } else {
+        const t = q[k] / p[k];
+        if (p[k] < 0) t0 = Math.max(t0, t);
+        else t1 = Math.min(t1, t);
+      }
+    }
+    if (!visible || t0 > t1) {
+      cur = null;
+      continue;
+    }
+    const ax = x0 + dx * t0;
+    const az = z0 + dz * t0;
+    const bx = x0 + dx * t1;
+    const bz = z0 + dz * t1;
+    if (!cur || t0 > 0) {
+      cur = [ax, az];
+      pieces.push(cur);
+    }
+    cur.push(bx, bz);
+    if (t1 < 1) cur = null;
+  }
+  return pieces.filter((pc) => pc.length >= 4);
+}
+
 /** Removes consecutive duplicate points and the closing duplicate, if any. */
 export function cleanRing(ring: Flat, eps = 1e-6): Flat {
   const out: Flat = [];

@@ -92,7 +92,7 @@ export class Screens {
     this.mapCanvas = el('canvas', '', this.map);
     this.mapCaption = el('div', 'caption-map', this.map);
 
-    const attr = el('div', 'attribution', parent, 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors');
+    const attr = el('div', 'attribution', parent, 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a>');
     attr.title = 'Open Database License (ODbL)';
   }
 

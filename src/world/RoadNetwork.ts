@@ -72,9 +72,11 @@ export class RoadNetwork {
   addRoads(owner: string, roads: RoadData[]) {
     const edges: RoadEdge[] = [];
     for (const r of roads) {
+      const last = r.nodes.length - 1;
       for (let i = 0; i + 1 < r.nodes.length; i++) {
-        const a = this.node(r.nodes[i], r.pts[i * 2], r.pts[i * 2 + 1]);
-        const b = this.node(r.nodes[i + 1], r.pts[i * 2 + 2], r.pts[i * 2 + 3]);
+        const a = i === 0 ? this.endpoint(r.nodes[i], r.pts[i * 2], r.pts[i * 2 + 1]) : this.node(r.nodes[i], r.pts[i * 2], r.pts[i * 2 + 1]);
+        const b =
+          i + 1 === last ? this.endpoint(r.nodes[i + 1], r.pts[i * 2 + 2], r.pts[i * 2 + 3]) : this.node(r.nodes[i + 1], r.pts[i * 2 + 2], r.pts[i * 2 + 3]);
         if (a === b) continue;
         const length = Math.hypot(b.x - a.x, b.z - a.z);
         if (length < 0.05) continue;
@@ -124,6 +126,26 @@ export class RoadNetwork {
     }
     this.ownerEdges.delete(owner);
     this.version++;
+  }
+
+  /**
+   * Like `node`, but a new synthetic vertex (negative id, from vector tiles) snaps onto an existing
+   * node within 1.5 m. Roads cut at tile borders can end up a fraction of a meter apart.
+   */
+  private endpoint(id: number, x: number, z: number): RoadNode {
+    if (id >= 0 || this.nodes.has(id)) return this.node(id, x, z);
+    let best: RoadNode | null = null;
+    let bestD = 1.5;
+    this.forEachEdgeNear(x, z, 2, (e) => {
+      for (const n of [e.a, e.b]) {
+        const d = Math.hypot(n.x - x, n.z - z);
+        if (d < bestD) {
+          bestD = d;
+          best = n;
+        }
+      }
+    });
+    return best ?? this.node(id, x, z);
   }
 
   private node(id: number, x: number, z: number): RoadNode {

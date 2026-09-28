@@ -38,6 +38,14 @@ function safeColor(value: string | undefined, fallback: string): THREE.Color {
   return new THREE.Color(fallback);
 }
 
+const hsl = { h: 0, s: 0, l: 0 };
+
+/** Mapped colours are often garish ("green"); keep them in a believable facade range. */
+function tame(c: THREE.Color): THREE.Color {
+  c.getHSL(hsl);
+  return c.setHSL(hsl.h, Math.min(hsl.s, 0.45) * 0.8, Math.min(Math.max(hsl.l, 0.3), 0.85));
+}
+
 /** Builds renderable meshes for one chunk. Geometry is merged per material to keep draw calls low. */
 export class ChunkMesher {
   private readonly trunkGeom = new THREE.CylinderGeometry(0.18, 0.28, 3, 6).translate(0, 1.5, 0);
@@ -138,8 +146,8 @@ export class ChunkMesher {
 
   private building(bd: BuildingData, walls: GeometryBuilder, roofs: GeometryBuilder) {
     const rnd = seededRandom(bd.id);
-    const wallColor = safeColor(bd.color, WALL_PALETTE[Math.floor(rnd() * WALL_PALETTE.length)]);
-    const roofColor = safeColor(bd.roofColor, ROOF_PALETTE[Math.floor(rnd() * ROOF_PALETTE.length)]);
+    const wallColor = tame(safeColor(bd.color, WALL_PALETTE[Math.floor(rnd() * WALL_PALETTE.length)]));
+    const roofColor = tame(safeColor(bd.roofColor, ROOF_PALETTE[Math.floor(rnd() * ROOF_PALETTE.length)]));
     const top = bd.height;
     const bottom = bd.minHeight;
     const rings = [bd.outer, ...(bd.holes ?? [])];
