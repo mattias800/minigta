@@ -175,7 +175,8 @@ export class Vehicle {
     this.steerAngle += (targetSteer - this.steerAngle) * damp(8, dt);
     const steerLimit = spec.steer / (1 + Math.abs(vF) / 28);
     const wheelBase = spec.length * 0.62;
-    let yawRate = (vF * Math.tan(this.steerAngle * steerLimit)) / wheelBase;
+    // Positive steer turns right, which is a decreasing heading (heading h faces (sin h, cos h)).
+    let yawRate = -(vF * Math.tan(this.steerAngle * steerLimit)) / wheelBase;
     if (handbrake && this.driver) yawRate *= 1.35;
 
     this.angVel *= Math.exp(-5 * dt);

@@ -208,7 +208,7 @@ export class VehicleModel {
   animate(dt: number, forwardSpeed: number, steer: number, braking: boolean, sirenOn: boolean, time: number) {
     this.wheelSpin += (forwardSpeed / this.spec.wheelRadius) * dt;
     for (const w of this.wheels) w.rotation.x = this.wheelSpin;
-    for (const p of this.frontWheels) p.rotation.y = steer * this.spec.steer;
+    for (const p of this.frontWheels) p.rotation.y = -steer * this.spec.steer;
     for (const b of this.brakeLights) (b.material as THREE.MeshBasicMaterial).color.set(braking ? '#ff2a1a' : '#7a0d0d');
     if (this.lightBar.length) {
       const phase = Math.floor(time * 6) % 2;

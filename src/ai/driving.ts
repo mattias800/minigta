@@ -8,7 +8,8 @@ export function steerTowards(v: Vehicle, tx: number, tz: number, desiredSpeed: n
   const diff = angleDiff(v.heading, want);
   const vF = v.forwardSpeed;
   const reversing = vF < -0.5;
-  v.controls.steer = clamp(diff * 2.2, -1, 1) * (reversing ? -1 : 1);
+  // diff > 0 means the target is to the left (heading must increase), i.e. negative (left) steer.
+  v.controls.steer = clamp(-diff * 2.2, -1, 1) * (reversing ? -1 : 1);
   const speed = vF;
   if (speed < desiredSpeed - 0.5) v.controls.throttle = clamp((desiredSpeed - speed) * 0.4, 0.25, 1);
   else if (speed > desiredSpeed + 1) v.controls.throttle = -clamp((speed - desiredSpeed) * 0.25, 0.15, 1);
