@@ -13,6 +13,7 @@ import {
 } from '../../geo/polygon';
 import {
   chunkKey,
+  type BridgeSpan,
   type AreaData,
   type AreaKind,
   type BuildingData,
@@ -94,14 +95,10 @@ export class OsmChunker {
     }
     for (const p of this.places) get(idx(p.x), idx(p.z))?.places.push(p);
 
-    for (const r of this.roads) {
-      for (const piece of splitByChunk(r.pts, r.nodes)) {
-        get(piece.cx, piece.cz)?.roads.push({ ...r, pts: piece.pts, nodes: piece.nodes });
-      }
-    }
-    for (const r of this.rails) {
-      for (const piece of splitByChunk(r.pts, r.nodes)) get(piece.cx, piece.cz)?.rails.push({ ...r, pts: piece.pts, nodes: piece.nodes });
-    }
+    this.computeBridgeSpans(this.roads);
+    this.computeBridgeSpans(this.rails);
+    for (const r of this.roads) for (const piece of splitLine(r)) get(piece.cx, piece.cz)?.roads.push(piece.line);
+    for (const r of this.rails) for (const piece of splitLine(r)) get(piece.cx, piece.cz)?.rails.push(piece.line);
 
     for (const a of this.areas) {
       const b = a.bounds;
@@ -123,6 +120,92 @@ export class OsmChunker {
       }
     }
     return out;
+  }
+
+  /**
+   * Stitches bridge ways that share end nodes into chains (a long bridge is often several ways) and
+   * gives every way its span: chain end points, length, its offset along the chain, and an arch if the
+   * bridge crosses water.
+   */
+  private computeBridgeSpans(lines: Linear[]) {
+    const bridges = lines.filter((r) => r.bridge && !r.span);
+    const byEnd = new Map<number, Linear[]>();
+    for (const r of bridges) {
+      for (const n of [r.nodes[0], r.nodes[r.nodes.length - 1]]) {
+        let list = byEnd.get(n);
+        if (!list) byEnd.set(n, (list = []));
+        list.push(r);
+      }
+    }
+    const lengthOf = (r: Linear) => {
+      let l = 0;
+      for (let i = 0; i + 3 < r.pts.length; i += 2) l += Math.hypot(r.pts[i + 2] - r.pts[i], r.pts[i + 3] - r.pts[i + 1]);
+      return l;
+    };
+    const done = new Set<Linear>();
+    const water = this.areas.filter((a) => a.kind === 'water');
+    for (const seed of bridges) {
+      if (done.has(seed)) continue;
+      // Walk backwards from the seed to the chain start, then forwards collecting (way, reversed).
+      let startWay = seed;
+      let startNode = seed.nodes[0];
+      const visited = new Set<Linear>([seed]);
+      for (;;) {
+        const prev = (byEnd.get(startNode) ?? []).find((r) => !visited.has(r));
+        if (!prev || (byEnd.get(startNode)?.length ?? 0) > 2) break;
+        visited.add(prev);
+        startWay = prev;
+        startNode = prev.nodes[0] === startNode ? prev.nodes[prev.nodes.length - 1] : prev.nodes[0];
+      }
+      const chain: { r: Linear; reversed: boolean }[] = [];
+      let node = startNode;
+      let cur: Linear | undefined = startWay;
+      while (cur && !done.has(cur)) {
+        done.add(cur);
+        const reversed = cur.nodes[0] !== node;
+        chain.push({ r: cur, reversed });
+        node = reversed ? cur.nodes[0] : cur.nodes[cur.nodes.length - 1];
+        const options: Linear[] = byEnd.get(node) ?? [];
+        cur = options.length === 2 ? options.find((r) => !done.has(r)) : undefined;
+      }
+      let total = 0;
+      const offsets: number[] = [];
+      for (const c of chain) {
+        offsets.push(total);
+        total += lengthOf(c.r);
+      }
+      const first = chain[0];
+      const last = chain[chain.length - 1];
+      const fp = first.r.pts;
+      const lp = last.r.pts;
+      const ax = first.reversed ? fp[fp.length - 2] : fp[0];
+      const az = first.reversed ? fp[fp.length - 1] : fp[1];
+      const bx = last.reversed ? lp[0] : lp[lp.length - 2];
+      const bz = last.reversed ? lp[1] : lp[lp.length - 1];
+      const overWater = chain.some((c) => {
+        for (let i = 0; i < c.r.pts.length; i += 2) {
+          const x = c.r.pts[i];
+          const z = c.r.pts[i + 1];
+          if (water.some((a) => x >= a.bounds.minX && x <= a.bounds.maxX && z >= a.bounds.minZ && z <= a.bounds.maxZ && pointInRing(x, z, a.outer))) return true;
+        }
+        return false;
+      });
+      const arch = overWater ? Math.min(20, Math.max(2, total * 0.025)) : 0;
+      chain.forEach((c, i) => {
+        const len = lengthOf(c.r);
+        c.r.span = {
+          ax: round(ax),
+          az: round(az),
+          bx: round(bx),
+          bz: round(bz),
+          length: round(total),
+          arch: round(arch),
+          // Distance at the way's first vertex.
+          start: round(c.reversed ? offsets[i] + len : offsets[i]),
+          dir: c.reversed ? -1 : 1,
+        };
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -164,7 +247,9 @@ export class OsmChunker {
       if (t.tunnel === 'yes' || isUnderground(t)) return;
       const kind = t.railway === 'rail' ? 'rail' : t.railway === 'subway' ? null : 'tram';
       if (!kind) return;
-      this.rails.push({ id: w.id, kind, pts: roundFlat(this.project(w.geometry)), nodes: w.nodes.slice() });
+      const rail: RailData = { id: w.id, kind, pts: roundFlat(this.project(w.geometry)), nodes: w.nodes.slice() };
+      if (t.bridge && t.bridge !== 'no') rail.bridge = true;
+      this.rails.push(rail);
       return;
     }
 
@@ -399,10 +484,31 @@ function areaKindOf(t: OsmTags): AreaKind | null {
   return null;
 }
 
+/** Shared shape of roads and rails. */
+type Linear = { pts: Flat; nodes: number[]; bridge?: boolean; span?: BridgeSpan };
+
+/** Splits a road/rail into chunk pieces, carrying the bridge span offset along. */
+function splitLine<T extends Linear>(r: T): { cx: number; cz: number; line: T }[] {
+  const out: { cx: number; cz: number; line: T }[] = [];
+  let dist = 0;
+  let vertex = 0;
+  for (const piece of splitByChunk(r.pts, r.nodes)) {
+    // Advance to the piece's first vertex to know how far along the bridge it starts.
+    while (vertex < piece.firstVertex) {
+      dist += Math.hypot(r.pts[vertex * 2 + 2] - r.pts[vertex * 2], r.pts[vertex * 2 + 3] - r.pts[vertex * 2 + 1]);
+      vertex++;
+    }
+    const line: T = { ...r, pts: piece.pts, nodes: piece.nodes };
+    if (r.span) line.span = { ...r.span, start: round(r.span.start + r.span.dir * dist) };
+    out.push({ cx: piece.cx, cz: piece.cz, line });
+  }
+  return out;
+}
+
 /** Splits a polyline at its vertices into consecutive runs whose segment midpoints share a chunk. */
-function splitByChunk(pts: Flat, nodes: number[] | null): { cx: number; cz: number; pts: Flat; nodes: number[] }[] {
-  const out: { cx: number; cz: number; pts: Flat; nodes: number[] }[] = [];
-  let cur: { cx: number; cz: number; pts: Flat; nodes: number[] } | null = null;
+function splitByChunk(pts: Flat, nodes: number[] | null): { cx: number; cz: number; pts: Flat; nodes: number[]; firstVertex: number }[] {
+  const out: { cx: number; cz: number; pts: Flat; nodes: number[]; firstVertex: number }[] = [];
+  let cur: { cx: number; cz: number; pts: Flat; nodes: number[]; firstVertex: number } | null = null;
   for (let i = 0; i + 3 < pts.length; i += 2) {
     const mx = (pts[i] + pts[i + 2]) / 2;
     const mz = (pts[i + 1] + pts[i + 3]) / 2;
@@ -410,7 +516,7 @@ function splitByChunk(pts: Flat, nodes: number[] | null): { cx: number; cz: numb
     const cz = Math.floor(mz / CHUNK_SIZE);
     const ni = i / 2;
     if (!cur || cur.cx !== cx || cur.cz !== cz) {
-      cur = { cx, cz, pts: [pts[i], pts[i + 1]], nodes: nodes ? [nodes[ni]] : [] };
+      cur = { cx, cz, pts: [pts[i], pts[i + 1]], nodes: nodes ? [nodes[ni]] : [], firstVertex: ni };
       out.push(cur);
     }
     cur.pts.push(pts[i + 2], pts[i + 3]);

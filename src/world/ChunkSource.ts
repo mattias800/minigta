@@ -11,7 +11,7 @@ interface Manifest {
 }
 
 /** Bump when the live conversion changes, so browsers don't reuse stale cached chunks. */
-const LIVE_CACHE_TAG = 'mvt1';
+const LIVE_CACHE_TAG = 'mvt2';
 
 /**
  * Provides chunk data: pre-baked chunks (from Overpass, richest data) shipped with the game where

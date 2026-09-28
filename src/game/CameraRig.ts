@@ -101,7 +101,10 @@ export class CameraRig {
     this.distance = dist < this.distance ? dist : this.distance + (dist - this.distance) * damp(3, dt);
 
     const cam = this.camera;
-    cam.position.set(origin.x + bx * this.distance, Math.max(0.4, origin.y + sp * this.distance), origin.z + bz * this.distance);
+    const camX = origin.x + bx * this.distance;
+    const camZ = origin.z + bz * this.distance;
+    // Never dip below the terrain (e.g. looking up from a downhill slope).
+    cam.position.set(camX, Math.max(world.groundHeight(camX, camZ) + 0.4, origin.y + sp * this.distance), camZ);
     if (shake > 0) {
       const s = shake * 0.25;
       cam.position.x += (Math.random() - 0.5) * s;

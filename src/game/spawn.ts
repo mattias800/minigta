@@ -5,6 +5,7 @@ import { Vehicle } from '../entities/Vehicle';
 import { randomPaint, VEHICLE_SPECS, type VehicleType } from '../entities/VehicleModel';
 import { LaneFollower } from '../ai/LaneFollower';
 import type { RoadEdge } from '../world/RoadNetwork';
+import type { World } from '../world/World';
 
 const TRAFFIC_MIX: VehicleType[] = ['sedan', 'sedan', 'estate', 'estate', 'estate', 'hatch', 'hatch', 'suv', 'suv', 'van', 'taxi', 'sports'];
 
@@ -30,6 +31,18 @@ export function createCop(): Character {
   c.inventory.select('pistol');
   c.maxHealth = c.health = 120;
   return c;
+}
+
+/** Surface height for something placed on an edge at fraction t (bridge deck or ground). */
+export function edgeHeight(world: World, edge: RoadEdge, t: number, x: number, z: number): number {
+  return edge.span ? world.deckHeight(edge, t) : world.groundHeight(x, z);
+}
+
+/** True if an edge is at roughly the given height (so AI doesn't snap onto a bridge above/below). */
+export function edgeAtHeight(world: World, edge: RoadEdge, y: number): boolean {
+  const mx = (edge.a.x + edge.b.x) / 2;
+  const mz = (edge.a.z + edge.b.z) / 2;
+  return Math.abs(edgeHeight(world, edge, 0.5, mx, mz) - y) < 3;
 }
 
 /** Position and heading in the right-hand lane of an edge at fraction t. */

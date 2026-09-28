@@ -40,8 +40,18 @@ export class VectorTileSource {
     let chunker = this.chunkers.get(key);
     if (!chunker) {
       const loads: Promise<OsmElement[]>[] = [];
-      for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) loads.push(this.tile({ z: ZOOM, x, y }));
-      chunker = Promise.all(loads).then((parts) => new OsmChunker(this.proj, parts.flat()));
+      const ring: Promise<OsmElement[]>[] = [];
+      for (let x = r.x0 - 1; x <= r.x1 + 1; x++) {
+        for (let y = r.y0 - 1; y <= r.y1 + 1; y++) {
+          const inside = x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+          (inside ? loads : ring).push(this.tile({ z: ZOOM, x, y }));
+        }
+      }
+      // Bridges from the surrounding tiles too, so bridges cut by tile borders get their full span.
+      const bridgesAround = Promise.all(ring.map((p) => p.catch(() => [] as OsmElement[]))).then((parts) =>
+        parts.flat().filter((e) => e.type === 'way' && e.tags?.bridge),
+      );
+      chunker = Promise.all([...loads, bridgesAround]).then((parts) => new OsmChunker(this.proj, parts.flat()));
       chunker.catch(() => this.chunkers.delete(key));
       this.chunkers.set(key, chunker);
       while (this.chunkers.size > 8) this.chunkers.delete(this.chunkers.keys().next().value!);

@@ -35,8 +35,12 @@ export class Vehicle {
   /** Planar velocity (x, z). */
   vx = 0;
   vz = 0;
-  /** Vertical velocity (only used when thrown by explosions). */
+  /** Vertical velocity (m/s). */
   vy = 0;
+  /** Terrain pitch (nose up positive) and roll, radians. */
+  pitch = 0;
+  roll = 0;
+  airborne = false;
   heading = 0;
   angVel = 0;
   steerAngle = 0;
@@ -133,6 +137,8 @@ export class Vehicle {
     const s = Math.sin(this.heading);
     const c = Math.cos(this.heading);
     let vF = this.vx * s + this.vz * c;
+    // Gravity along the slope.
+    if (!this.airborne) vF -= 9.81 * Math.sin(this.pitch) * dt;
     // Right of forward (s, c) is (-c, s).
     let vR = this.vx * -c + this.vz * s;
 
@@ -186,7 +192,7 @@ export class Vehicle {
     this.vz = c * vF + s * vR;
 
     // Water: stall and sink.
-    if (this.state !== 'sinking' && this.state !== 'wrecked' && world.surfaceAt(this.pos.x, this.pos.z) === 'water') {
+    if (this.state !== 'sinking' && this.state !== 'wrecked' && !this.airborne && world.surfaceAt(this.pos.x, this.pos.z, this.pos.y) === 'water') {
       this.state = 'sinking';
       this.sinkTime = 0;
     }
@@ -194,7 +200,8 @@ export class Vehicle {
       this.sinkTime += dt;
       this.vx *= Math.exp(-2.5 * dt);
       this.vz *= Math.exp(-2.5 * dt);
-      this.pos.y = Math.max(-2.5, -this.sinkTime * 0.7);
+      const level = world.waterLevelAt(this.pos.x, this.pos.z) ?? world.groundHeight(this.pos.x, this.pos.z);
+      this.pos.y = level - Math.min(2.5, this.sinkTime * 0.7);
     }
     if (this.state === 'burning') this.burnTime += dt;
     if (this.state === 'wrecked') {
@@ -211,20 +218,10 @@ export class Vehicle {
       this.collideStatic(world);
     }
 
-    // Vertical (explosions throw wrecks upwards).
-    if (this.state !== 'sinking') {
-      if (this.pos.y > 0 || this.vy !== 0) {
-        this.vy -= 20 * dt;
-        this.pos.y += this.vy * dt;
-        if (this.pos.y <= 0) {
-          this.pos.y = 0;
-          this.vy = 0;
-        }
-      }
-    }
+    if (this.state !== 'sinking') this.followSurface(dt, world);
 
     this.object.position.copy(this.pos);
-    this.object.rotation.y = this.heading;
+    this.object.rotation.set(-this.pitch, this.heading, this.roll, 'YXZ');
     // Body roll/pitch for a bit of weight.
     const bg = this.model.bodyGroup;
     bg.rotation.z += (clamp(-yawRate * vF * 0.004, -0.06, 0.06) - bg.rotation.z) * damp(6, dt);
@@ -232,10 +229,54 @@ export class Vehicle {
     this.model.animate(dt, vF, this.steerAngle, braking, this.sirenOn && this.alive, this.time);
   }
 
+  /**
+   * Keeps the car on the terrain / bridge decks: height from the ground under the axles, pitch and roll
+   * from the slope. When the ground drops away faster than the car follows (a crest at speed), it
+   * becomes airborne and flies ballistically until it lands.
+   */
+  private followSurface(dt: number, world: World) {
+    const s = Math.sin(this.heading);
+    const c = Math.cos(this.heading);
+    const hl = this.spec.length * 0.36;
+    const hw = this.spec.width * 0.4;
+    const y = this.pos.y;
+    const hF = world.surfaceHeight(this.pos.x + s * hl, this.pos.z + c * hl, y + 0.5);
+    const hB = world.surfaceHeight(this.pos.x - s * hl, this.pos.z - c * hl, y + 0.5);
+    const hL = world.surfaceHeight(this.pos.x + c * hw, this.pos.z - s * hw, y + 0.5);
+    const hR = world.surfaceHeight(this.pos.x - c * hw, this.pos.z + s * hw, y + 0.5);
+    const ground = (hF + hB + hL + hR) / 4;
+    const pitch = Math.atan2(hF - hB, hl * 2);
+    const roll = Math.atan2(hL - hR, hw * 2);
+
+    if (this.airborne) {
+      this.vy -= 20 * dt;
+      this.pos.y += this.vy * dt;
+      // Nose drops a little in flight.
+      this.pitch += (-0.15 - this.pitch) * damp(0.8, dt);
+      if (this.pos.y <= ground) {
+        if (this.vy < -9) this.impacts.push({ vehicle: this, speed: (-this.vy - 9) * 1.5, x: this.pos.x, z: this.pos.z });
+        this.pos.y = ground;
+        this.vy = 0;
+        this.airborne = false;
+      }
+    } else {
+      const followVy = (ground - y) / Math.max(dt, 1e-3);
+      if (ground < y - 0.3 && this.vy > -1) {
+        // The ground fell away beneath us: take off with the current vertical speed.
+        this.airborne = true;
+      } else {
+        this.vy += (followVy - this.vy) * 0.5;
+        this.pos.y = ground;
+        this.pitch += (pitch - this.pitch) * damp(12, dt);
+        this.roll += (roll - this.roll) * damp(12, dt);
+      }
+    }
+  }
+
   private collideStatic(world: World) {
     for (const circle of this.circles()) {
       const p = { x: circle.x, z: circle.z };
-      const push = world.collision.resolveCircle(p, circle.r, 0.5);
+      const push = world.collision.resolveCircle(p, circle.r, this.pos.y + 0.4, this.pos.y + 1.4);
       if (!push) continue;
       const dx = p.x - circle.x;
       const dz = p.z - circle.z;

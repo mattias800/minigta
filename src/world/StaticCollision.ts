@@ -10,6 +10,8 @@ export interface Obstacle {
   bx: number;
   bz: number;
   r: number;
+  /** Absolute height range (m) the obstacle occupies. */
+  bottom: number;
   top: number;
   owner: string;
   /** Query stamp used for de-duplication across grid cells. */
@@ -41,12 +43,12 @@ export class StaticCollision {
   private readonly ownerCells = new Map<string, Set<number>>();
   private stamp = 1;
 
-  addWall(owner: string, ax: number, az: number, bx: number, bz: number, top: number) {
-    this.insert({ ax, az, bx, bz, r: 0, top, owner, stamp: 0 });
+  addWall(owner: string, ax: number, az: number, bx: number, bz: number, bottom: number, top: number) {
+    this.insert({ ax, az, bx, bz, r: 0, bottom, top, owner, stamp: 0 });
   }
 
-  addPost(owner: string, x: number, z: number, r: number, top: number) {
-    this.insert({ ax: x, az: z, bx: x, bz: z, r, top, owner, stamp: 0 });
+  addPost(owner: string, x: number, z: number, r: number, bottom: number, top: number) {
+    this.insert({ ax: x, az: z, bx: x, bz: z, r, bottom, top, owner, stamp: 0 });
   }
 
   removeOwner(owner: string) {
@@ -118,13 +120,13 @@ export class StaticCollision {
   }
 
   /**
-   * Finds the deepest penetration of a circle into any obstacle taller than `minTop`.
-   * Returns null if there is no overlap. Callers typically iterate a couple of times.
+   * Finds the deepest penetration of a circle (a vertical cylinder from `minY` to `maxY`) into any
+   * obstacle overlapping that height range. Returns null if there is no overlap.
    */
-  circleHit(x: number, z: number, radius: number, minTop = 0.5): CircleHit | null {
+  circleHit(x: number, z: number, radius: number, minY: number, maxY: number): CircleHit | null {
     let best: CircleHit | null = null;
     this.forEachNear(x - radius - 1, z - radius - 1, x + radius + 1, z + radius + 1, (o) => {
-      if (o.top < minTop) return;
+      if (o.top <= minY || o.bottom >= maxY) return;
       const c = closestPointOnSegment(x, z, o.ax, o.az, o.bx, o.bz);
       const rr = radius + o.r;
       if (c.d2 >= rr * rr) return;
@@ -141,12 +143,12 @@ export class StaticCollision {
     return best;
   }
 
-  /** Resolves a circle out of all obstacles; returns the accumulated push (or null if untouched). */
-  resolveCircle(pos: { x: number; z: number }, radius: number, minTop = 0.5): { nx: number; nz: number } | null {
+  /** Resolves a cylinder out of all obstacles; returns the accumulated push (or null if untouched). */
+  resolveCircle(pos: { x: number; z: number }, radius: number, minY: number, maxY: number): { nx: number; nz: number } | null {
     let pushX = 0;
     let pushZ = 0;
     for (let iter = 0; iter < 4; iter++) {
-      const hit = this.circleHit(pos.x, pos.z, radius, minTop);
+      const hit = this.circleHit(pos.x, pos.z, radius, minY, maxY);
       if (!hit) break;
       pos.x += hit.nx * hit.depth;
       pos.z += hit.nz * hit.depth;
@@ -158,10 +160,10 @@ export class StaticCollision {
   }
 
   /**
-   * Casts a ray in the xz plane. If `y0`/`dy` are given, the ray is treated as 3D with height
-   * y0 + dy * t (dy is the vertical rise per horizontal meter) and passes over obstacles lower than it.
+   * Casts a ray in the xz plane at height y0 + dy * t (dy is the vertical rise per horizontal meter);
+   * it passes over and under obstacles outside that height.
    */
-  raycast(ox: number, oz: number, dx: number, dz: number, maxDist: number, y0 = 1, dy = 0): RayHit | null {
+  raycast(ox: number, oz: number, dx: number, dz: number, maxDist: number, y0: number, dy = 0): RayHit | null {
     const len = Math.hypot(dx, dz);
     if (len < 1e-9) return null;
     dx /= len;
@@ -188,7 +190,8 @@ export class StaticCollision {
           o.stamp = s;
           const h = o.r > 0 ? rayCircle(ox, oz, dx, dz, o.ax, o.az, o.r) : raySegment(ox, oz, dx, dz, o.ax, o.az, o.bx, o.bz);
           if (h === null || h >= bestT) continue;
-          if (y0 + dy * h > o.top) continue;
+          const hy = y0 + dy * h;
+          if (hy > o.top || hy < o.bottom) continue;
           bestT = h;
           const hx = ox + dx * h;
           const hz = oz + dz * h;

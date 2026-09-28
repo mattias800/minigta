@@ -134,16 +134,17 @@ export class PlayerController {
     const p = this.player;
     const col = this.ctx.world.collision;
     let spot = v.doorPosition(1);
-    if (col.circleHit(spot.x, spot.z, 0.35)) {
+    const y = v.pos.y;
+    if (col.circleHit(spot.x, spot.z, 0.35, y + 0.4, y + 1.8)) {
       const other = v.doorPosition(-1);
-      if (!col.circleHit(other.x, other.z, 0.35)) spot = other;
+      if (!col.circleHit(other.x, other.z, 0.35, y + 0.4, y + 1.8)) spot = other;
     }
     v.driver = null;
     v.controls.throttle = 0;
     v.controls.steer = 0;
     v.controls.handbrake = true;
     p.vehicle = null;
-    p.pos.set(spot.x, 0, spot.z);
+    p.pos.set(spot.x, this.ctx.world.surfaceHeight(spot.x, spot.z, y + 0.5), spot.z);
     p.heading = v.heading;
     const speed = v.speed;
     if (speed > 8) {

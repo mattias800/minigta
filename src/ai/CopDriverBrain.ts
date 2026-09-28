@@ -3,6 +3,7 @@ import { Character } from '../entities/Character';
 import type { Brain } from '../game/Entities';
 import type { GameContext } from '../game/GameContext';
 import { SPEED_LIMIT } from '../world/RoadNetwork';
+import { edgeAtHeight } from '../game/spawn';
 import { CopBrain } from './CopBrain';
 import { DriverBrain } from './DriverBrain';
 import { obstacleAhead, steerTowards } from './driving';
@@ -53,7 +54,7 @@ export class CopDriverBrain implements Brain {
     this.losTimer -= dt;
     if (this.losTimer <= 0) {
       this.losTimer = 0.3;
-      this.hasLos = dist < 70 && ctx.world.collision.lineOfSight(v.pos.x, 1.2, v.pos.z, target.x, 1.2, target.z);
+      this.hasLos = dist < 70 && ctx.world.collision.lineOfSight(v.pos.x, v.pos.y + 1.2, v.pos.z, target.x, target.y + 1.2, target.z);
     }
 
     if (this.reverseTime > 0) {
@@ -81,7 +82,7 @@ export class CopDriverBrain implements Brain {
       this.repath -= dt;
       if (!this.follower || !this.follower.valid(net) || this.repath <= 0) {
         this.repath = 1.5;
-        const q = net.nearestEdge(v.pos.x, v.pos.z, 30, (e) => e.drivable);
+        const q = net.nearestEdge(v.pos.x, v.pos.z, 30, (e) => e.drivable && edgeAtHeight(ctx.world, e, v.pos.y));
         const goal = net.nearestNode(target.x, target.z, 60, (e) => e.drivable);
         if (q && goal) {
           const fwd = Math.sin(v.heading) * q.edge.dx + Math.cos(v.heading) * q.edge.dz >= 0;
@@ -127,13 +128,13 @@ export class CopDriverBrain implements Brain {
     v.controls.handbrake = true;
     v.sirenOn = v.alive;
     me.vehicle = null;
-    me.pos.set(door.x, 0, door.z);
+    me.pos.set(door.x, v.pos.y, door.z);
     me.inventory.select('pistol');
     ctx.entities.setBrain(me, new CopBrain(me, v.alive ? v : null));
     if (withPartner && v.alive) {
       const p = v.doorPosition(-1);
       const partner = new Character('cop', copLook());
-      partner.pos.set(p.x, 0, p.z);
+      partner.pos.set(p.x, v.pos.y, p.z);
       partner.heading = v.heading;
       partner.inventory.give('pistol', 200);
       partner.inventory.select('pistol');

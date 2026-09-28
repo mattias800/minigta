@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CHUNK_LOAD_RADIUS, CHUNK_SIZE, CHUNK_UNLOAD_RADIUS } from '../config';
-import { pointInPolygon, ringBounds, type Rect } from '../geo/polygon';
+import { closestPointOnSegment, pointInPolygon, ringBounds, type Rect } from '../geo/polygon';
 import type { Projection } from '../geo/projection';
 import { ChunkMesher, type ChunkMeshes } from '../render/ChunkMesher';
 import { WorldMaterials } from '../render/WorldMaterials';
@@ -8,8 +8,10 @@ import { renderMapTile } from '../ui/minimapTiles';
 import { chunkKey, type AreaData, type ChunkData, type PlaceData } from './chunkTypes';
 import { ChunkSource } from './ChunkSource';
 import { lampsForChunk, treesForChunk } from './decorations';
-import { RoadNetwork } from './RoadNetwork';
+import { RoadNetwork, type RoadEdge } from './RoadNetwork';
 import { StaticCollision } from './StaticCollision';
+import { buildingBase, makeHeightSampler, waterLevel, type HeightSampler } from './terrain/heights';
+import { Terrain, terrariumLoader } from './terrain/Terrain';
 
 interface LoadedChunk {
   key: string;
@@ -38,12 +40,18 @@ export class World {
   private readonly loaded = new Map<string, LoadedChunk>();
   private readonly loading = new Map<string, Promise<void>>();
   private readonly ready: ChunkData[] = [];
+  /** Keys of chunks downloaded and waiting to be built (so they aren't requested again). */
+  private readonly readyKeys = new Set<string>();
   private readonly failed = new Map<string, number>();
   private time = 0;
   private initialized = false;
+  readonly terrain: Terrain;
+  readonly heights: HeightSampler;
 
   constructor(readonly projection: Projection) {
     this.source = new ChunkSource(projection);
+    this.terrain = new Terrain(projection, terrariumLoader);
+    this.heights = makeHeightSampler((x, z) => this.terrain.heightAt(x, z));
     this.group.name = 'world';
   }
 
@@ -68,7 +76,7 @@ export class World {
         const cx = pcx + dx;
         const cz = pcz + dz;
         const k = chunkKey(cx, cz);
-        if (this.loaded.has(k) || this.loading.has(k)) continue;
+        if (this.loaded.has(k) || this.loading.has(k) || this.readyKeys.has(k)) continue;
         if ((this.failed.get(k) ?? 0) > this.time) continue;
         // Distance from the player to the chunk center.
         wanted.push({ cx, cz, d: Math.hypot((cx + 0.5) * CHUNK_SIZE - x, (cz + 0.5) * CHUNK_SIZE - z) });
@@ -83,6 +91,8 @@ export class World {
     while (this.ready.length && (performance.now() - start < buildBudgetMs || this.loaded.size === 0)) {
       const data = this.ready.shift()!;
       const k = chunkKey(data.cx, data.cz);
+      this.readyKeys.delete(k);
+      if (this.loaded.has(k)) continue;
       if (Math.max(Math.abs(data.cx - pcx), Math.abs(data.cz - pcz)) > CHUNK_UNLOAD_RADIUS) continue;
       this.add(k, data);
     }
@@ -96,8 +106,18 @@ export class World {
     const k = chunkKey(cx, cz);
     const p = this.source
       .load(cx, cz)
-      .then((data) => {
+      .then(async (data) => {
+        // Terrain for the chunk plus a margin (road pieces and buildings poke out), and bridge ends.
+        const m = 80;
+        const areas: Promise<void>[] = [this.terrain.ensure(cx * CHUNK_SIZE - m, cz * CHUNK_SIZE - m, (cx + 1) * CHUNK_SIZE + m, (cz + 1) * CHUNK_SIZE + m)];
+        for (const r of data.roads) {
+          if (!r.span) continue;
+          areas.push(this.terrain.ensure(r.span.ax - 5, r.span.az - 5, r.span.ax + 5, r.span.az + 5));
+          areas.push(this.terrain.ensure(r.span.bx - 5, r.span.bz - 5, r.span.bx + 5, r.span.bz + 5));
+        }
+        await Promise.all(areas);
         this.ready.push(data);
+        this.readyKeys.add(k);
       })
       .catch((e) => {
         console.warn(`Failed to load chunk ${k}:`, e);
@@ -110,27 +130,39 @@ export class World {
   private add(key: string, data: ChunkData) {
     const trees = treesForChunk(data);
     const lamps = lampsForChunk(data);
-    const meshes = this.mesher.build(data, trees, lamps);
+    const h = this.heights;
+    for (const a of data.areas) if (a.kind === 'water') a.level = waterLevel(a.outer, h.ground);
+    const meshes = this.mesher.build(data, trees, lamps, h);
     this.group.add(meshes.group);
 
     for (const b of data.buildings) {
       if (b.roofOnly) continue;
+      const base = buildingBase(b, h.ground);
       for (const ring of [b.outer, ...(b.holes ?? [])]) {
         const n = ring.length / 2;
         for (let i = 0; i < n; i++) {
           const j = (i + 1) % n;
-          this.collision.addWall(key, ring[i * 2], ring[i * 2 + 1], ring[j * 2], ring[j * 2 + 1], b.height);
+          this.collision.addWall(key, ring[i * 2], ring[i * 2 + 1], ring[j * 2], ring[j * 2 + 1], base + b.minHeight - 1, base + b.height);
         }
       }
     }
-    for (const t of trees) this.collision.addPost(key, t.x, t.z, 0.3 * t.scale, 6 * t.scale);
-    for (const l of lamps) this.collision.addPost(key, l.x, l.z, 0.14, 5.5);
+    for (const t of trees) {
+      const g = h.ground(t.x, t.z);
+      this.collision.addPost(key, t.x, t.z, 0.3 * t.scale, g - 1, g + 6 * t.scale);
+    }
+    for (const l of lamps) {
+      const g = h.ground(l.x, l.z);
+      this.collision.addPost(key, l.x, l.z, 0.14, g - 1, g + 5.5);
+    }
+    // Bridge railings (keep cars on bridges over water) and pillars.
+    for (const w of meshes.colliders.walls) this.collision.addWall(key, w.ax, w.az, w.bx, w.bz, w.bottom, w.top);
+    for (const p of meshes.colliders.posts) this.collision.addPost(key, p.x, p.z, p.r, p.bottom, p.top);
     this.roads.addRoads(key, data.roads);
     this.tramTracks.addRoads(
       key,
       data.rails
         .filter((r) => r.kind === 'tram' && r.nodes?.length === r.pts.length / 2)
-        .map((r) => ({ id: r.id, kind: 'service' as const, pts: r.pts, nodes: r.nodes, width: 2.6, lanes: 1, oneway: false })),
+        .map((r) => ({ id: r.id, kind: 'service' as const, pts: r.pts, nodes: r.nodes, width: 2.6, lanes: 1, oneway: false, bridge: r.bridge, span: r.span })),
     );
 
     const withBounds = (a: AreaData) => ({ ...a, bounds: ringBounds(a.outer) });
@@ -181,15 +213,57 @@ export class World {
     return done / total;
   }
 
-  surfaceAt(x: number, z: number): Surface {
+  /** Ground (terrain) elevation. */
+  groundHeight(x: number, z: number): number {
+    return this.heights.ground(x, z);
+  }
+
+  /** Deck height of a bridge edge at fraction t (a → b). */
+  deckHeight(e: RoadEdge, t: number): number {
+    return this.heights.deck(e.span!, e.sa! + (e.sb! - e.sa!) * t);
+  }
+
+  /**
+   * Height of the surface to stand/drive on at (x, z): the terrain, or a bridge deck. With a current
+   * height `y`, picks the highest surface that is at most a small step above it (so you stay on the
+   * bridge when on it, and under it when below).
+   */
+  surfaceHeight(x: number, z: number, y = Infinity, step = 1.2): number {
+    let best = this.heights.ground(x, z);
+    // In water you stand (swim) on the surface, not on the (coarse) river bed.
+    const water = this.waterLevelAt(x, z);
+    if (water !== null) best = Math.min(best, water);
+    const visit = (e: RoadEdge) => {
+      if (!e.span) return;
+      const c = closestPointOnSegment(x, z, e.a.x, e.a.z, e.b.x, e.b.z);
+      const hw = e.width / 2 + 0.4;
+      if (c.d2 > hw * hw) return;
+      const deck = this.deckHeight(e, c.t);
+      if (deck > best && deck <= y + step) best = deck;
+    };
+    this.roads.forEachEdgeNear(x, z, 16, visit);
+    this.tramTracks.forEachEdgeNear(x, z, 8, visit);
+    return best;
+  }
+
+  /** Water surface elevation at (x, z), or null if there is no water there. */
+  waterLevelAt(x: number, z: number): number | null {
     const c = this.loaded.get(chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE)));
-    if (!c || !c.water.length) return 'ground';
+    if (!c || !c.water.length) return null;
     const inside = (a: AreaData & { bounds: Rect }) =>
       x >= a.bounds.minX && x <= a.bounds.maxX && z >= a.bounds.minZ && z <= a.bounds.maxZ && pointInPolygon(x, z, a.outer, a.holes);
-    if (!c.water.some(inside)) return 'ground';
-    if (c.piers.some(inside)) return 'ground';
-    if (this.roads.isOnRoad(x, z, 0.5)) return 'ground';
-    return 'water';
+    const w = c.water.find(inside);
+    if (!w) return null;
+    if (c.piers.some(inside)) return null;
+    if (this.roads.isOnRoad(x, z, 0.5)) return null;
+    return w.level ?? 0;
+  }
+
+  /** 'water' if (x, z) is water and (when given) height y is at or below its surface. */
+  surfaceAt(x: number, z: number, y?: number): Surface {
+    const level = this.waterLevelAt(x, z);
+    if (level === null) return 'ground';
+    return y === undefined || y <= level + 0.6 ? 'water' : 'ground';
   }
 
   /** Nearest named place (district) among loaded chunks. */

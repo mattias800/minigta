@@ -27,7 +27,7 @@ export class Combat {
     if (victim.alive) {
       this.ctx.events.emit('injure', { victim, attacker });
     } else {
-      fx.bloodPool(victim.pos.x, victim.pos.z);
+      fx.bloodPool(victim.pos.x, victim.pos.z, victim.pos.y);
       this.ctx.events.emit('death', { victim, killer: attacker, cause });
     }
   }
@@ -57,12 +57,10 @@ export class Combat {
         }
       }
     }
-    if (dir.y < -1e-4) {
-      const d = -origin.y / dir.y;
-      if (d > 0 && d < bestD) {
-        bestD = d;
-        best = { kind: 'ground', point: origin.clone().addScaledVector(dir, d), distance: d };
-      }
+    const gd = this.groundHit(origin, dir, bestD);
+    if (gd !== null) {
+      bestD = gd;
+      best = { kind: 'ground', point: origin.clone().addScaledVector(dir, gd), distance: gd };
     }
 
     for (const c of this.ctx.entities.characters) {
@@ -84,6 +82,30 @@ export class Combat {
       }
     }
     return best;
+  }
+
+  /** Distance along the ray to the terrain (marching + bisection), or null within maxDist. */
+  private groundHit(o: THREE.Vector3, d: THREE.Vector3, maxDist: number): number | null {
+    const world = this.ctx.world;
+    const above = (t: number) => o.y + d.y * t - world.groundHeight(o.x + d.x * t, o.z + d.z * t);
+    if (above(0) < 0) return null;
+    const step = 2;
+    let prev = 0;
+    for (let t = step; ; t += step) {
+      const tt = Math.min(t, maxDist);
+      if (above(tt) <= 0) {
+        let lo = prev;
+        let hi = tt;
+        for (let i = 0; i < 8; i++) {
+          const mid = (lo + hi) / 2;
+          if (above(mid) > 0) lo = mid;
+          else hi = mid;
+        }
+        return hi;
+      }
+      prev = tt;
+      if (tt >= maxDist) return null;
+    }
   }
 
   /** Fires the shooter's current weapon from `origin` towards `target`. Returns false if it didn't fire. */
@@ -147,7 +169,7 @@ export class Combat {
     let best: Character | null = null;
     let bestD = WEAPONS.fists.range;
     for (const c of this.ctx.entities.characters) {
-      if (c === attacker || !c.alive || c.vehicle) continue;
+      if (c === attacker || !c.alive || c.vehicle || Math.abs(c.pos.y - attacker.pos.y) > 1.5) continue;
       const dx = c.pos.x - attacker.pos.x;
       const dz = c.pos.z - attacker.pos.z;
       const d = Math.hypot(dx, dz);
@@ -172,7 +194,7 @@ export class Combat {
     this.ctx.events.emit('explosion', { x, z, by });
     const radius = 9;
     for (const c of this.ctx.entities.characters) {
-      if (c.vehicle) continue;
+      if (c.vehicle || Math.abs(c.pos.y - y) > 6) continue;
       const dx = c.pos.x - x;
       const dz = c.pos.z - z;
       const d = Math.hypot(dx, dz);
@@ -187,7 +209,7 @@ export class Combat {
       const dx = v.pos.x - x;
       const dz = v.pos.z - z;
       const d = Math.hypot(dx, dz);
-      if (d > radius || d < 0.01) continue;
+      if (d > radius || d < 0.01 || Math.abs(v.pos.y - y) > 6) continue;
       const f = 1 - d / radius;
       this.damageVehicle(v, 600 * f, by);
       v.vx += (dx / d) * 8 * f;
@@ -205,25 +227,25 @@ export class Combat {
       const frontX = v.pos.x + Math.sin(v.heading) * v.spec.length * 0.35;
       const frontZ = v.pos.z + Math.cos(v.heading) * v.spec.length * 0.35;
       if (v.state === 'ok' && frac < 0.35 && Math.random() < dt * (frac < 0.2 ? 14 : 6)) {
-        fx.smokePuff(frontX, v.spec.belt, frontZ, frac < 0.2 ? 0.6 : 0.1, 0.6);
+        fx.smokePuff(frontX, v.pos.y + v.spec.belt, frontZ, frac < 0.2 ? 0.6 : 0.1, 0.6);
       }
       if (v.state === 'burning') {
-        if (Math.random() < dt * 30) fx.fire(frontX, v.spec.belt, frontZ, 0.8);
-        if (Math.random() < dt * 10) fx.smokePuff(frontX, v.spec.belt + 0.5, frontZ, 0.8, 0.8);
+        if (Math.random() < dt * 30) fx.fire(frontX, v.pos.y + v.spec.belt, frontZ, 0.8);
+        if (Math.random() < dt * 10) fx.smokePuff(frontX, v.pos.y + v.spec.belt + 0.5, frontZ, 0.8, 0.8);
         if (v.burnTime > 4.5) {
           v.state = 'wrecked';
           v.wreckTime = 0;
           v.model.setWrecked();
           v.vy = 5;
-          v.pos.y = 0.01;
-          this.explode(v.pos.x, 0.8, v.pos.z, v.lastDamager);
+          v.airborne = true;
+          this.explode(v.pos.x, v.pos.y + 0.8, v.pos.z, v.lastDamager);
           if (v.driver) this.damageCharacter(v.driver, 1000, v.lastDamager, 'explosion');
           this.ctx.events.emit('vehicleDestroyed', { vehicle: v, by: v.lastDamager });
         }
       }
       if (v.state === 'wrecked' && v.wreckTime < 8 && Math.random() < dt * 8) {
-        fx.smokePuff(v.pos.x, 1, v.pos.z, 0.9, 1);
-        if (v.wreckTime < 5) fx.fire(v.pos.x, 0.8, v.pos.z, 1.2);
+        fx.smokePuff(v.pos.x, v.pos.y + 1, v.pos.z, 0.9, 1);
+        if (v.wreckTime < 5) fx.fire(v.pos.x, v.pos.y + 0.8, v.pos.z, 1.2);
       }
       if (v.state === 'sinking' && v.sinkTime < dt * 1.5) {
         fx.splash(v.pos.x, v.pos.z);

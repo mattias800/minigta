@@ -61,7 +61,7 @@ export class CopBrain extends PedBrain {
     if (this.losTimer <= 0) {
       this.losTimer = 0.25;
       const eye = me.chest(tmpA);
-      const aim = player.vehicle ? tmpB.set(target.x, 1.1, target.z) : player.chest(tmpB);
+      const aim = player.vehicle ? tmpB.set(target.x, target.y + 1.1, target.z) : player.chest(tmpB);
       this.hasLos = dist < 70 && ctx.world.collision.lineOfSight(eye.x, eye.y, eye.z, aim.x, aim.y, aim.z);
     }
 
@@ -87,7 +87,7 @@ export class CopBrain extends PedBrain {
       me.aiming = true;
       this.aimTime += dt;
       const eye = me.chest(tmpA);
-      const aimPoint = player.vehicle ? tmpB.set(target.x, 1.1, target.z) : player.chest(tmpB);
+      const aimPoint = player.vehicle ? tmpB.set(target.x, target.y + 1.1, target.z) : player.chest(tmpB);
       me.aimPitch = Math.atan2(aimPoint.y - eye.y, dist);
       // Keep a working distance while shooting.
       if (dist > 20) this.moveTowards(ctx, target.x, target.z, 2.5);
@@ -130,7 +130,7 @@ export class CopBrain extends PedBrain {
     const col = ctx.world.collision;
     for (const off of [0, 0.4, -0.4, 0.9, -0.9, 1.5, -1.5]) {
       const a = dir + off;
-      if (!col.raycast(me.pos.x, me.pos.z, Math.sin(a), Math.cos(a), 2, 1)) {
+      if (!col.raycast(me.pos.x, me.pos.z, Math.sin(a), Math.cos(a), 2, me.pos.y + 1)) {
         dir = a;
         break;
       }

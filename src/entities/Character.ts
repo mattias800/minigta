@@ -99,7 +99,7 @@ export class Character {
     if (!this.alive) this.deadTime += dt;
     if (this.downTime > 0 && this.onGround) this.downTime -= dt;
 
-    const surface = world.surfaceAt(this.pos.x, this.pos.z);
+    const surface = world.surfaceAt(this.pos.x, this.pos.z, this.pos.y);
     this.swimming = surface === 'water' && this.onGround;
 
     // Horizontal movement: accelerate towards the desired velocity.
@@ -120,22 +120,33 @@ export class Character {
     }
     this.wantJump = false;
 
-    // Vertical.
-    if (!this.onGround) {
-      this.vel.y -= GRAVITY * dt;
-    }
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
-    this.pos.y += this.vel.y * dt;
-    if (this.pos.y <= 0) {
-      if (!this.onGround && this.vel.y < -14) this.damage((-this.vel.y - 14) * 4, null);
-      this.pos.y = 0;
-      this.vel.y = 0;
-      this.onGround = true;
+
+    // Vertical: follow the terrain / bridge decks; fall when walking off an edge.
+    const ground = world.surfaceHeight(this.pos.x, this.pos.z, this.pos.y);
+    if (this.onGround) {
+      if (ground < this.pos.y - 0.7) {
+        this.onGround = false;
+        this.vel.y = 0;
+      } else {
+        this.pos.y = ground;
+        this.vel.y = 0;
+      }
+    }
+    if (!this.onGround) {
+      this.vel.y -= GRAVITY * dt;
+      this.pos.y += this.vel.y * dt;
+      if (this.pos.y <= ground) {
+        if (this.vel.y < -14) this.damage((-this.vel.y - 14) * 4, null);
+        this.pos.y = ground;
+        this.vel.y = 0;
+        this.onGround = true;
+      }
     }
 
-    // Static collision (only while near the ground; you can't jump over houses anyway).
-    const push = world.collision.resolveCircle(this.pos, this.radius, this.pos.y + 0.4);
+    // Static collision against obstacles at body height.
+    const push = world.collision.resolveCircle(this.pos, this.radius, this.pos.y + 0.4, this.pos.y + 1.8);
     if (push) {
       const vn = this.vel.x * push.nx + this.vel.z * push.nz;
       if (vn < 0) {

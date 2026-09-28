@@ -4,6 +4,7 @@ import type { Vehicle } from '../entities/Vehicle';
 import type { Brain } from '../game/Entities';
 import type { GameContext } from '../game/GameContext';
 import { SPEED_LIMIT, type RoadEdge } from '../world/RoadNetwork';
+import { edgeAtHeight } from '../game/spawn';
 import { CopDriverBrain } from './CopDriverBrain';
 import { obstacleAhead, steerTowards } from './driving';
 import { LaneFollower } from './LaneFollower';
@@ -53,7 +54,7 @@ export class DriverBrain implements Brain {
 
     const net = ctx.world.roads;
     if (!this.follower || !this.follower.valid(net)) {
-      const q = net.nearestEdge(v.pos.x, v.pos.z, 30, (e) => e.drivable);
+      const q = net.nearestEdge(v.pos.x, v.pos.z, 30, (e) => e.drivable && edgeAtHeight(ctx.world, e, v.pos.y));
       if (!q) {
         v.controls.throttle = 0;
         v.controls.handbrake = true;
@@ -121,7 +122,7 @@ export function bailOut(ctx: GameContext, c: Character, v: Vehicle, flee: boolea
   v.controls.throttle = 0;
   v.controls.steer = 0;
   c.vehicle = null;
-  c.pos.set(door.x, 0, door.z);
+  c.pos.set(door.x, v.pos.y, door.z);
   c.vel.set(v.vx * 0.5, 0, v.vz * 0.5);
   c.heading = v.heading + Math.PI / 2;
   const brain = new PedBrain(c);

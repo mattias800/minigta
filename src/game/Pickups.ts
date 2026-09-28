@@ -30,6 +30,8 @@ export class Pickups {
   readonly group = new THREE.Group();
   private readonly items: Pickup[] = [];
   private readonly beamGeom = new THREE.CylinderGeometry(0.45, 0.45, 2.2, 12, 1, true);
+  /** Ground height lookup (set by the game). */
+  ground: (x: number, z: number) => number = () => 0;
 
   add(kind: PickupKind, x: number, z: number, amount: number, weapon?: WeaponId, respawn = 0) {
     const g = new THREE.Group();
@@ -58,7 +60,7 @@ export class Pickups {
     const holder = new THREE.Group();
     holder.add(g, beam);
     g.position.y = 0.6;
-    holder.position.set(x, 0, z);
+    holder.position.set(x, this.ground(x, z), z);
     this.group.add(holder);
     this.items.push({ kind, amount, weapon, mesh: holder, age: Math.random() * 10, respawn, hiddenFor: 0, ttl: respawn ? Infinity : kind === 'cash' ? 60 : 90 });
   }
@@ -93,7 +95,7 @@ export class Pickups {
       if (!player.alive || player.vehicle) continue;
       const dx = player.pos.x - p.mesh.position.x;
       const dz = player.pos.z - p.mesh.position.z;
-      if (dx * dx + dz * dz > 1.2) continue;
+      if (dx * dx + dz * dz > 1.2 || Math.abs(player.pos.y - p.mesh.position.y) > 2) continue;
       if (!give(p)) continue;
       labels.push(p.kind === 'cash' ? `+ ${p.amount} kr` : p.kind === 'weapon' ? `${WEAPONS[p.weapon!].name} (+${p.amount})` : p.kind === 'health' ? 'Health' : 'Body armor');
       if (p.respawn) {

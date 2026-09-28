@@ -43,13 +43,13 @@ export function obstacleAhead(ctx: GameContext, v: Vehicle, range: number, laneH
   };
   for (const o of ctx.entities.vehicles) {
     if (o === v) continue;
-    if (Math.abs(o.pos.x - v.pos.x) > range + 6 || Math.abs(o.pos.z - v.pos.z) > range + 6) continue;
+    if (Math.abs(o.pos.x - v.pos.x) > range + 6 || Math.abs(o.pos.z - v.pos.z) > range + 6 || Math.abs(o.pos.y - v.pos.y) > 3) continue;
     const along = o.vx * s + o.vz * c;
     check(o.pos.x, o.pos.z, o.spec.width / 2, o.driver === ctx.player, along);
   }
   for (const ch of ctx.entities.characters) {
     if (ch.vehicle || !ch.alive) continue;
-    if (Math.abs(ch.pos.x - v.pos.x) > range + 2 || Math.abs(ch.pos.z - v.pos.z) > range + 2) continue;
+    if (Math.abs(ch.pos.x - v.pos.x) > range + 2 || Math.abs(ch.pos.z - v.pos.z) > range + 2 || Math.abs(ch.pos.y - v.pos.y) > 3) continue;
     check(ch.pos.x, ch.pos.z, 0.5, ch === ctx.player, 0);
   }
   return { maxSpeed, blockerIsPlayer };

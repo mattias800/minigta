@@ -5,7 +5,7 @@ import { PedBrain } from '../ai/PedBrain';
 import { chance, rand } from '../core/math';
 import type { Character } from '../entities/Character';
 import type { GameContext } from './GameContext';
-import { createCivilian, createCop, createVehicle, lanePose, parkedPose, randomTrafficType } from './spawn';
+import { createCivilian, createCop, createVehicle, edgeHeight, lanePose, parkedPose, randomTrafficType } from './spawn';
 
 const PED_TARGET = 44;
 const TRAFFIC_TARGET = 20;
@@ -85,7 +85,7 @@ export class Population {
 
   private visible(x: number, z: number): boolean {
     if (this.priming) return false;
-    return this.frustum.containsPoint(tmp.set(x, 1.5, z));
+    return this.frustum.containsPoint(tmp.set(x, this.ctx.world.groundHeight(x, z) + 1.5, z));
   }
 
   private despawn(focus: THREE.Vector3) {
@@ -123,10 +123,11 @@ export class Population {
     const x = edge.a.x + (edge.b.x - edge.a.x) * t - edge.dz * off * side;
     const z = edge.a.z + (edge.b.z - edge.a.z) * t + edge.dx * off * side;
     if (this.visible(x, z) && Math.hypot(x - focus.x, z - focus.z) < 60) return;
-    if (ctx.world.collision.circleHit(x, z, 0.4) || ctx.world.surfaceAt(x, z) === 'water') return;
+    const y = ctx.world.groundHeight(x, z);
+    if (ctx.world.collision.circleHit(x, z, 0.4, y + 0.4, y + 1.8) || ctx.world.surfaceAt(x, z, y) === 'water') return;
     const isCop = chance(0.06);
     const c = isCop ? createCop() : createCivilian();
-    c.pos.set(x, 0, z);
+    c.pos.set(x, y, z);
     c.heading = rand(0, Math.PI * 2);
     ctx.entities.addCharacter(c, isCop ? new CopBrain(c) : new PedBrain(c));
   }
@@ -139,11 +140,12 @@ export class Population {
     const forward = edge.oneway ? true : chance(0.5);
     const pose = lanePose(edge, forward, rand(0.2, 0.8));
     if (this.visible(pose.x, pose.z) && Math.hypot(pose.x - focus.x, pose.z - focus.z) < 120) return;
-    if (ctx.entities.vehiclesNear(pose.x, pose.z, 8).length || ctx.world.collision.circleHit(pose.x, pose.z, 1.2)) return;
-    if (ctx.world.surfaceAt(pose.x, pose.z) === 'water') return;
+    const y = edgeHeight(ctx.world, edge, 0.5, pose.x, pose.z);
+    if (ctx.entities.vehiclesNear(pose.x, pose.z, 8).length || ctx.world.collision.circleHit(pose.x, pose.z, 1.2, y + 0.4, y + 1.4)) return;
+    if (ctx.world.surfaceAt(pose.x, pose.z, y) === 'water') return;
     const type = chance(0.04) ? 'police' : randomTrafficType();
     const v = createVehicle(type);
-    v.pos.set(pose.x, 0, pose.z);
+    v.pos.set(pose.x, y, pose.z);
     v.heading = pose.heading;
     const speed = Math.min(8, edge.length);
     v.vx = Math.sin(pose.heading) * speed;
@@ -170,10 +172,11 @@ export class Population {
     const forward = chance(0.5);
     const pose = parkedPose(edge, forward, rand(0.25, 0.75));
     if (this.visible(pose.x, pose.z) && Math.hypot(pose.x - focus.x, pose.z - focus.z) < 90) return;
-    if (ctx.entities.vehiclesNear(pose.x, pose.z, 6).length || ctx.world.collision.circleHit(pose.x, pose.z, 1.1)) return;
-    if (ctx.world.surfaceAt(pose.x, pose.z) === 'water') return;
+    const y = ctx.world.groundHeight(pose.x, pose.z);
+    if (ctx.entities.vehiclesNear(pose.x, pose.z, 6).length || ctx.world.collision.circleHit(pose.x, pose.z, 1.1, y + 0.4, y + 1.4)) return;
+    if (ctx.world.surfaceAt(pose.x, pose.z, y) === 'water') return;
     const v = createVehicle(randomTrafficType() === 'taxi' ? 'sedan' : randomTrafficType());
-    v.pos.set(pose.x, 0, pose.z);
+    v.pos.set(pose.x, y, pose.z);
     v.heading = pose.heading;
     ctx.entities.addVehicle(v);
   }

@@ -1,5 +1,5 @@
 import { closestPointOnSegment } from '../geo/polygon';
-import type { RoadData, RoadKind } from './chunkTypes';
+import type { BridgeSpan, RoadData, RoadKind } from './chunkTypes';
 import { isDrivable } from './osm/process';
 
 export interface RoadNode {
@@ -27,6 +27,10 @@ export interface RoadEdge {
   drivable: boolean;
   owner: string;
   stamp: number;
+  /** Bridges: the span and the distance along it at a and b (deck height is computed by the World). */
+  span?: BridgeSpan;
+  sa?: number;
+  sb?: number;
 }
 
 export interface EdgeQuery {
@@ -73,7 +77,11 @@ export class RoadNetwork {
     const edges: RoadEdge[] = [];
     for (const r of roads) {
       const last = r.nodes.length - 1;
+      let dist = r.span ? r.span.start : 0;
       for (let i = 0; i + 1 < r.nodes.length; i++) {
+        const segLen = Math.hypot(r.pts[i * 2 + 2] - r.pts[i * 2], r.pts[i * 2 + 3] - r.pts[i * 2 + 1]);
+        const sa = dist;
+        dist += r.span ? r.span.dir * segLen : 0;
         const a = i === 0 ? this.endpoint(r.nodes[i], r.pts[i * 2], r.pts[i * 2 + 1]) : this.node(r.nodes[i], r.pts[i * 2], r.pts[i * 2 + 1]);
         const b =
           i + 1 === last ? this.endpoint(r.nodes[i + 1], r.pts[i * 2 + 2], r.pts[i * 2 + 3]) : this.node(r.nodes[i + 1], r.pts[i * 2 + 2], r.pts[i * 2 + 3]);
@@ -97,6 +105,11 @@ export class RoadNetwork {
           owner,
           stamp: 0,
         };
+        if (r.span) {
+          e.span = r.span;
+          e.sa = sa;
+          e.sb = dist;
+        }
         a.edges.push(e);
         b.edges.push(e);
         edges.push(e);
@@ -215,11 +228,11 @@ export class RoadNetwork {
     return best;
   }
 
-  /** True if (x, z) lies on the paved surface of any road or bridge. */
+  /** True if (x, z) lies on the paved surface of any road (bridges excluded: they're above ground). */
   isOnRoad(x: number, z: number, margin = 0): boolean {
     let on = false;
     this.forEachEdgeNear(x, z, 16, (e) => {
-      if (on) return;
+      if (on || e.span) return;
       const c = closestPointOnSegment(x, z, e.a.x, e.a.z, e.b.x, e.b.z);
       const hw = e.width / 2 + margin + (e.drivable && e.kind !== 'service' && e.kind !== 'motorway' ? 2.5 : 0);
       if (c.d2 < hw * hw) on = true;

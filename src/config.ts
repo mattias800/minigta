@@ -18,4 +18,4 @@ export const CHUNK_UNLOAD_RADIUS = 3;
 export const BAKE_BOUNDS = { south: 57.677, west: 11.925, north: 57.726, east: 12.012 };
 
 /** Bump when the chunk format changes; invalidates browser caches of live-fetched chunks. */
-export const DATA_VERSION = 2;
+export const DATA_VERSION = 3;

@@ -41,7 +41,26 @@ export interface RoadData {
   lanes: number;
   oneway: boolean;
   bridge?: boolean;
+  /** For bridges: the whole bridge this piece belongs to, so its deck height can be computed. */
+  span?: BridgeSpan;
   name?: string;
+}
+
+/**
+ * A bridge's full extent. The deck is interpolated between the ground heights at its two ends (A, B),
+ * plus an arch over water. `start` is the distance from A to this piece's first vertex, and `dir` says
+ * whether distance increases (+1) or decreases (-1) along the piece's points.
+ */
+export interface BridgeSpan {
+  ax: number;
+  az: number;
+  bx: number;
+  bz: number;
+  length: number;
+  start: number;
+  dir: 1 | -1;
+  /** Extra height at mid-span (m). */
+  arch: number;
 }
 
 export interface BuildingData {
@@ -62,6 +81,8 @@ export interface AreaData {
   kind: AreaKind;
   outer: number[];
   holes?: number[][];
+  /** Water surface elevation (m); computed at load time from the terrain, not stored. */
+  level?: number;
 }
 
 export interface RailData {
@@ -70,6 +91,8 @@ export interface RailData {
   pts: number[];
   /** OSM node ids, parallel to pts (connects the tram network across ways and chunks). */
   nodes: number[];
+  bridge?: boolean;
+  span?: BridgeSpan;
 }
 
 export interface PlaceData {

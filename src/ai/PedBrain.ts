@@ -4,6 +4,7 @@ import type { Character } from '../entities/Character';
 import type { Brain } from '../game/Entities';
 import type { GameContext } from '../game/GameContext';
 import type { RoadEdge, RoadNode } from '../world/RoadNetwork';
+import { edgeAtHeight } from '../game/spawn';
 
 type State = 'wander' | 'idle' | 'flee' | 'fight';
 
@@ -111,7 +112,7 @@ export class PedBrain implements Brain {
     me.moveSpeed = this.walkSpeed;
     const net = ctx.world.roads;
     if (!this.edge || !this.edge.a.edges.includes(this.edge)) {
-      const q = net.nearestEdge(me.pos.x, me.pos.z, 40, (e) => e.kind !== 'motorway');
+      const q = net.nearestEdge(me.pos.x, me.pos.z, 40, (e) => e.kind !== 'motorway' && edgeAtHeight(ctx.world, e, me.pos.y));
       if (!q) {
         me.moveX = me.moveZ = 0;
         return;
@@ -178,7 +179,7 @@ export class PedBrain implements Brain {
     let dir = this.fleeDir;
     for (const offset of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4, -2.4]) {
       const a = this.fleeDir + offset;
-      if (!col.raycast(me.pos.x, me.pos.z, Math.sin(a), Math.cos(a), 3, 1)) {
+      if (!col.raycast(me.pos.x, me.pos.z, Math.sin(a), Math.cos(a), 3, me.pos.y + 1)) {
         dir = a;
         break;
       }

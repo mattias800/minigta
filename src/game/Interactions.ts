@@ -16,7 +16,7 @@ export function resolveInteractions(ctx: GameContext, combat: Combat) {
     for (let j = i + 1; j < vehicles.length; j++) {
       const b = vehicles[j];
       const reach = (a.spec.length + b.spec.length) / 2 + 0.5;
-      if (Math.abs(a.pos.x - b.pos.x) > reach || Math.abs(a.pos.z - b.pos.z) > reach) continue;
+      if (Math.abs(a.pos.x - b.pos.x) > reach || Math.abs(a.pos.z - b.pos.z) > reach || Math.abs(a.pos.y - b.pos.y) > 2) continue;
       collideVehicles(ctx, combat, a, b);
     }
   }
@@ -28,7 +28,7 @@ export function resolveInteractions(ctx: GameContext, combat: Combat) {
       if (c.vehicle) continue;
       const reach = v.spec.length / 2 + 1;
       if (Math.abs(c.pos.x - v.pos.x) > reach || Math.abs(c.pos.z - v.pos.z) > reach) continue;
-      if (c.pos.y > v.spec.height + 0.2) continue;
+      if (c.pos.y > v.pos.y + v.spec.height + 0.2 || c.pos.y < v.pos.y - 1.5) continue;
       for (const circle of v.circles()) {
         const dx = c.pos.x - circle.x;
         const dz = c.pos.z - circle.z;
@@ -69,7 +69,7 @@ export function resolveInteractions(ctx: GameContext, combat: Combat) {
     if (a.vehicle || !a.alive) continue;
     for (let j = i + 1; j < characters.length; j++) {
       const b = characters[j];
-      if (b.vehicle || !b.alive) continue;
+      if (b.vehicle || !b.alive || Math.abs(b.pos.y - a.pos.y) > 1.5) continue;
       const dx = b.pos.x - a.pos.x;
       const dz = b.pos.z - a.pos.z;
       const rr = a.radius + b.radius;
@@ -124,8 +124,8 @@ function collideVehicles(ctx: GameContext, combat: Combat, a: Vehicle, b: Vehicl
         const dmg = impact * impact * 0.9;
         combat.damageVehicle(a, dmg * wa * 2, b.driver);
         combat.damageVehicle(b, dmg * wb * 2, a.driver);
-        ctx.audio.impact({ x: (p.x + q.x) / 2, y: 0.6, z: (p.z + q.z) / 2 }, impact / 18);
-        ctx.effects.impact((p.x + q.x) / 2, 0.7, (p.z + q.z) / 2, nx, nz);
+        ctx.audio.impact({ x: (p.x + q.x) / 2, y: a.pos.y + 0.6, z: (p.z + q.z) / 2 }, impact / 18);
+        ctx.effects.impact((p.x + q.x) / 2, a.pos.y + 0.7, (p.z + q.z) / 2, nx, nz);
         if (impact > 12) ctx.effects.shake = Math.max(ctx.effects.shake, 0.4);
         for (const [v, other] of [
           [a, b],
@@ -144,8 +144,8 @@ export function processVehicleImpacts(ctx: GameContext, combat: Combat, v: Vehic
   for (const imp of v.impacts) {
     if (imp.speed > 3) {
       combat.damageVehicle(v, imp.speed * imp.speed * 0.8, null);
-      ctx.audio.impact({ x: imp.x, y: 0.6, z: imp.z }, imp.speed / 18);
-      if (imp.speed > 8) ctx.effects.impact(imp.x, 0.7, imp.z, 0, 0);
+      ctx.audio.impact({ x: imp.x, y: v.pos.y + 0.6, z: imp.z }, imp.speed / 18);
+      if (imp.speed > 8) ctx.effects.impact(imp.x, v.pos.y + 0.7, imp.z, 0, 0);
       if (imp.speed > 10 && v.driver === ctx.player) ctx.effects.shake = Math.max(ctx.effects.shake, imp.speed / 30);
       if (v.driver && imp.speed > 16) combat.damageCharacter(v.driver, (imp.speed - 16) * 2, null, 'vehicle');
     }

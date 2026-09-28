@@ -90,7 +90,7 @@ class ParticlePool {
     q.alive = true;
   }
 
-  update(dt: number) {
+  update(dt: number, ground: (x: number, z: number) => number) {
     const ps = this.particles;
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
@@ -111,8 +111,9 @@ class ParticlePool {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;
-      if (p.y < 0.02 && p.gravity > 0) {
-        p.y = 0.02;
+      const g = p.gravity > 0 ? ground(p.x, p.z) + 0.02 : -Infinity;
+      if (p.y < g) {
+        p.y = g;
         p.vy *= -0.2;
         p.vx *= 0.5;
         p.vz *= 0.5;
@@ -154,6 +155,8 @@ export class Effects {
   private readonly decals: THREE.Mesh[] = [];
   private decalCursor = 0;
   private readonly decalGeom = new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2);
+  /** Ground height lookup (set by the game) so debris bounces on the terrain. */
+  ground: (x: number, z: number) => number = () => 0;
   /** Camera shake amount, decays over time; read by the camera rig. */
   shake = 0;
 
@@ -227,10 +230,10 @@ export class Effects {
     }
   }
 
-  bloodPool(x: number, z: number) {
+  bloodPool(x: number, z: number, y = this.ground(x, z)) {
     const m = this.decals[this.decalCursor];
     this.decalCursor = (this.decalCursor + 1) % this.decals.length;
-    m.position.set(x + rand(-0.2, 0.2), 0.07, z + rand(-0.2, 0.2));
+    m.position.set(x + rand(-0.2, 0.2), y + 0.07, z + rand(-0.2, 0.2));
     m.scale.setScalar(0.1);
     m.userData.target = rand(0.7, 1.2);
     m.visible = true;
@@ -264,18 +267,19 @@ export class Effects {
   }
 
   dust(x: number, z: number) {
-    this.smoke.spawn({ x, y: 0.2, z, vx: rand(-0.5, 0.5), vy: rand(0.2, 0.8), vz: rand(-0.5, 0.5), maxLife: 1.2, size0: 0.5, size1: 2, r: 0.55, g: 0.55, b: 0.55, alpha: 0.35, drag: 1 });
+    this.smoke.spawn({ x, y: this.ground(x, z) + 0.2, z, vx: rand(-0.5, 0.5), vy: rand(0.2, 0.8), vz: rand(-0.5, 0.5), maxLife: 1.2, size0: 0.5, size1: 2, r: 0.55, g: 0.55, b: 0.55, alpha: 0.35, drag: 1 });
   }
 
   splash(x: number, z: number) {
+    const y = this.ground(x, z) + 0.1;
     for (let i = 0; i < 20; i++) {
-      this.smoke.spawn({ x, y: 0.1, z, vx: rand(-3, 3), vy: rand(2, 6), vz: rand(-3, 3), maxLife: rand(0.5, 1), size0: 0.5, size1: 1.2, r: 0.8, g: 0.9, b: 1, alpha: 0.7, gravity: 10 });
+      this.smoke.spawn({ x, y, z, vx: rand(-3, 3), vy: rand(2, 6), vz: rand(-3, 3), maxLife: rand(0.5, 1), size0: 0.5, size1: 1.2, r: 0.8, g: 0.9, b: 1, alpha: 0.7, gravity: 10 });
     }
   }
 
   update(dt: number) {
-    this.glow.update(dt);
-    this.smoke.update(dt);
+    this.glow.update(dt, this.ground);
+    this.smoke.update(dt, this.ground);
     this.shake = Math.max(0, this.shake - dt * 1.5);
     for (let i = 0; i < this.tracers.length; i++) {
       const t = this.tracers[i];

@@ -5,6 +5,8 @@ import type { World } from '../src/world/World';
 
 const flatWorld = {
   surfaceAt: () => 'ground',
+  surfaceHeight: () => 0,
+  groundHeight: () => 0,
   collision: { resolveCircle: () => null },
 } as unknown as World;
 

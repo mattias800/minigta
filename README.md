@@ -2,8 +2,8 @@
 
 A small GTA-style open-world game that takes place in the **real world**. The city is generated
 from [OpenStreetMap](https://www.openstreetmap.org) data — real streets, buildings (with real
-heights where mapped), parks, water, tram lines and district names. You start on
-Kungsportsavenyen in Gothenburg, Sweden.
+heights where mapped), parks, water, tram lines and district names — on real terrain elevation,
+with bridges rising over the water. You start on Kungsportsavenyen in Gothenburg, Sweden.
 
 **Play it:** https://mattias800.github.io/minigta/
 
@@ -24,8 +24,11 @@ Kungsportsavenyen in Gothenburg, Sweden.
   (right-hand traffic), and Gothenburg's blue-and-white **trams** run on the real tram tracks.
 - **HUD:** GTA-style minimap, street and district names as you move, money, wanted stars,
   a procedural in-car radio (three stations), full map (**M**).
-- **Anywhere on Earth:** the area around the start is pre-baked; everything else streams live from
-  the Overpass API. The pause menu can take you to Stockholm, London, New York, Tokyo, … or start
+- **Real terrain and bridges:** the ground follows real elevation data; bridges are rebuilt from their
+  OSM extent with decks, pillars and railings (drive over Hisingsbron). Cars pitch and roll with the
+  slope and get airborne over crests.
+- **Anywhere on Earth:** the area around the start is pre-baked from Overpass; everything else streams
+  live from [OpenFreeMap](https://openfreemap.org) vector tiles (about a second per area). The pause menu can take you to Stockholm, London, New York, Tokyo, … or start
   anywhere with `?lat=59.3293&lon=18.0686&name=Stockholm`.
 
 All graphics and sounds are procedural (no asset files): geometry is built from map data, textures are
@@ -77,7 +80,9 @@ src/
   geo/                 lat/lon ⇄ meters projection, polygon utilities
   world/
     osm/               Overpass client + OSM → chunk processing (shared by the bake tool and the game)
-    ChunkSource.ts     baked chunks, or live Overpass fetches cached in IndexedDB
+    mvt/               OpenFreeMap vector tiles → OSM-like elements (re-noded so roads connect)
+    terrain/           elevation tiles → global 10 m height lattice, bridge deck heights, water levels
+    ChunkSource.ts     baked chunks, or live vector-tile chunks cached in IndexedDB
     World.ts           chunk streaming around the player; owns collision, road graph, minimap tiles
     StaticCollision.ts spatial hash of building walls/posts (circle resolution, ray casts, line of sight)
     RoadNetwork.ts     road graph from OSM nodes (nearest-edge queries, A*)
@@ -102,5 +107,8 @@ tools/                 fetchOsm.ts and bakeChunks.ts
 
 Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the
 Open Database License (ODbL). The files in `public/data/` are derived from it and remain under the ODbL.
+Live map tiles by [OpenFreeMap](https://openfreemap.org) © [OpenMapTiles](https://www.openmaptiles.org/).
+Elevation from [Mapzen Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) on AWS Open Data
+(SRTM and other sources); the terrain provider is pluggable, e.g. for Lantmäteriet's 1 m model.
 
 Built with [three.js](https://threejs.org), TypeScript and Vite. Code is MIT licensed.

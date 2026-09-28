@@ -1,5 +1,5 @@
 {
-  "v": 2,
+  "v": 3,
   "origin": {
     "lat": 57.7072,
     "lon": 11.9668
@@ -11,6 +11,6 @@
     "minCz": -8,
     "maxCz": 12
   },
-  "generated": "2026-09-28T15:49:28.619Z",
+  "generated": "2026-09-28T22:32:18.277Z",
   "attribution": "© OpenStreetMap contributors, ODbL"
 }

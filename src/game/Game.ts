@@ -127,6 +127,8 @@ export class Game {
   private setupScene() {
     const scene = this.scene;
     scene.add(this.world.group, this.effects.group, this.pickups.group);
+    this.effects.ground = (x, z) => this.world.groundHeight(x, z);
+    this.pickups.ground = (x, z) => this.world.groundHeight(x, z);
 
     // The sky is drawn first, without depth, so its size can stay inside the camera's far plane.
     const sky = new Sky();
@@ -263,13 +265,15 @@ export class Game {
     if (sidewalk) {
       const e = sidewalk.edge;
       const off = e.width / 2 + 1.4;
-      p.pos.set(sidewalk.x - e.dz * off, 0, sidewalk.z + e.dx * off);
+      const sx = sidewalk.x - e.dz * off;
+      const sz = sidewalk.z + e.dx * off;
+      p.pos.set(sx, this.world.groundHeight(sx, sz), sz);
       p.heading = Math.atan2(e.dx, e.dz);
       this.rig.yaw = p.heading;
       // A nice car parked right there.
       const pose = parkedPose(e, true, Math.min(0.95, sidewalk.t + 3.5 / e.length));
       const car = createVehicle('sports');
-      car.pos.set(pose.x, 0, pose.z);
+      car.pos.set(pose.x, this.world.groundHeight(pose.x, pose.z), pose.z);
       car.heading = pose.heading;
       car.persistent = true;
       this.entities.addVehicle(car);
@@ -277,7 +281,7 @@ export class Game {
       p.pos.copy(this.spawnPoint);
     }
     // Resolve out of any building.
-    this.world.collision.resolveCircle(p.pos, 0.5);
+    this.world.collision.resolveCircle(p.pos, 0.5, p.pos.y + 0.4, p.pos.y + 1.8);
     this.entities.addCharacter(p);
     this.placeStartPickups();
     this.population.prime();
@@ -423,10 +427,11 @@ export class Game {
     const target = this.options.origin === DEFAULT_ORIGIN ? s : { x: 0, z: 0 };
     this.world.update(dt, target.x, target.z, 8);
     const a = this.time * 0.05;
-    this.camera.position.set(target.x + Math.sin(a) * 160, 90, target.z + Math.cos(a) * 160);
-    this.camera.lookAt(target.x, 0, target.z);
-    this.sun.position.set(target.x, 0, target.z).add(this.sunOffset);
-    this.sun.target.position.set(target.x, 0, target.z);
+    const ty = this.world.groundHeight(target.x, target.z);
+    this.camera.position.set(target.x + Math.sin(a) * 160, ty + 90, target.z + Math.cos(a) * 160);
+    this.camera.lookAt(target.x, ty, target.z);
+    this.sun.position.set(target.x, ty, target.z).add(this.sunOffset);
+    this.sun.target.position.set(target.x, ty, target.z);
     this.effects.update(dt);
   }
 
@@ -440,14 +445,17 @@ export class Game {
       progress,
       live ? `Downloading map data from OpenStreetMap… (${live} request${live > 1 ? 's' : ''})${err ? ` — retrying: ${err.slice(0, 80)}` : ''}` : 'Building the city…',
     );
-    this.camera.position.set(p.x + 60, 70, p.z + 60);
-    this.camera.lookAt(p.x, 0, p.z);
+    const gy = this.world.groundHeight(p.x, p.z);
+    this.camera.position.set(p.x + 60, gy + 70, p.z + 60);
+    this.camera.lookAt(p.x, gy, p.z);
     if (progress >= 1 && this.stateTime > 0.3) {
       if (this.respawning) {
         this.respawning = false;
         const q = this.world.roads.nearestEdge(p.x, p.z, 60, (e) => !e.drivable || e.kind === 'residential');
         if (q) this.player.pos.set(q.x, 0, q.z);
-        this.world.collision.resolveCircle(this.player.pos, 0.5);
+        const pp = this.player.pos;
+        pp.y = this.world.groundHeight(pp.x, pp.z);
+        this.world.collision.resolveCircle(pp, 0.5, pp.y + 0.4, pp.y + 1.8);
         this.population.prime();
         this.state = 'playing';
         this.screens.hideAll();
@@ -503,8 +511,8 @@ export class Game {
     this.effects.update(dt);
 
     this.rig.update(dt, this.input, p, this.world, this.effects.shake);
-    this.sun.position.set(focus.x, 0, focus.z).add(this.sunOffset);
-    this.sun.target.position.set(focus.x, 0, focus.z);
+    this.sun.position.copy(focus).add(this.sunOffset);
+    this.sun.target.position.copy(focus);
     this.updateAudio();
     this.updateHud(dt);
 

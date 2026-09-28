@@ -3,7 +3,7 @@ import { CopDriverBrain } from '../ai/CopDriverBrain';
 import { CopBrain } from '../ai/CopBrain';
 import type { Character } from '../entities/Character';
 import type { GameContext } from './GameContext';
-import { createCop, createVehicle, lanePose } from './spawn';
+import { createCop, createVehicle, edgeHeight, lanePose } from './spawn';
 
 /** Heat needed for each wanted star (index = stars). */
 const THRESHOLDS = [0, 40, 180, 420, 800, 1400];
@@ -139,7 +139,7 @@ export class Police {
       const d = Math.hypot(src.x - target.x, src.z - target.z);
       if (d < 12) return true;
       if (d > 65) continue;
-      const eye = c.vehicle ? tmpA.set(src.x, 1.3, src.z) : c.chest(tmpA);
+      const eye = c.vehicle ? tmpA.set(src.x, src.y + 1.3, src.z) : c.chest(tmpA);
       if (ctx.world.collision.lineOfSight(eye.x, eye.y, eye.z, target.x, target.y, target.z)) return true;
     }
     return false;
@@ -157,7 +157,7 @@ export class Police {
     const pose = lanePose(edge, forward, 0.5);
     if (ctx.entities.vehiclesNear(pose.x, pose.z, 7).length) return;
     const car = createVehicle('police');
-    car.pos.set(pose.x, 0, pose.z);
+    car.pos.set(pose.x, edgeHeight(ctx.world, edge, 0.5, pose.x, pose.z), pose.z);
     car.heading = pose.heading;
     car.sirenOn = true;
     ctx.entities.addVehicle(car);

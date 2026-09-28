@@ -200,7 +200,7 @@ export class Trams {
         v.vx = (nx - v.pos.x) / dt;
         v.vz = (nz - v.pos.z) / dt;
       }
-      v.pos.set(nx, 0, nz);
+      v.pos.set(nx, this.ctx.world.surfaceHeight(nx, nz, v.pos.y + 0.5), nz);
       v.heading = Math.atan2(front.x - back.x, front.z - back.z);
     }
   }
