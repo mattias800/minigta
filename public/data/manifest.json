@@ -1,0 +1,16 @@
+{
+  "v": 2,
+  "origin": {
+    "lat": 57.7072,
+    "lon": 11.9668
+  },
+  "chunkSize": 250,
+  "bounds": {
+    "minCx": -9,
+    "maxCx": 9,
+    "minCz": -8,
+    "maxCz": 12
+  },
+  "generated": "2026-09-28T15:49:28.619Z",
+  "attribution": "© OpenStreetMap contributors, ODbL"
+}

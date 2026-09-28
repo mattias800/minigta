@@ -1,0 +1,31 @@
+{
+  "name": "minigta",
+  "version": "1.0.0",
+  "description": "Grand Theft Göteborg — a small GTA-style game set in real-world Gothenburg, built from OpenStreetMap data.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc",
+    "osm:fetch": "tsx tools/fetchOsm.ts",
+    "osm:bake": "tsx tools/bakeChunks.ts"
+  },
+  "keywords": [],
+  "author": "mattias800",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@fontsource/anton": "^5.3.0",
+    "@fontsource/oswald": "^5.3.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/three": "^0.186.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}
